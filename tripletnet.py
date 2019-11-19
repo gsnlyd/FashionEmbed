@@ -60,7 +60,7 @@ class CS_Tripletnet(nn.Module):
             if mask_norm is None:
                 mask_norm = masknorm_norm_x
             else:
-                mask_norm += masknorm_norm_x
+                mask_norm = mask_norm + masknorm_norm_x
 
             weights = weights_xy[:, idx]
             weights = weights.unsqueeze(1)
@@ -73,7 +73,7 @@ class CS_Tripletnet(nn.Module):
                 embedded_y += tmp_embedded_y * weights.expand_as(tmp_embedded_y)
                 embedded_z += tmp_embedded_z * weights.expand_as(tmp_embedded_z)
 
-        mask_norm /= self.num_concepts
+        mask_norm = mask_norm / self.num_concepts
         embed_norm = (embed_norm_x + embed_norm_y + embed_norm_z) / 3
         mask_embed_norm = (tot_embed_norm_x + tot_embed_norm_y + tot_embed_norm_z) / 3
         dist_a = F.pairwise_distance(embedded_x, embedded_y, 2)
