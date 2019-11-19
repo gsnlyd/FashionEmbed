@@ -48,6 +48,6 @@ class ConditionalSimNet(nn.Module):
         if self.learnedmask:
             self.mask = torch.nn.functional.relu(self.mask)
         masked_embedding = embedded_x * self.mask
-        norm = torch.norm(masked_embedding, p=2, dim=1) + 1e-10
+        norm = torch.norm(masked_embedding, p=2, dim=1, keepdim=True) + 1e-10
         masked_embedding = masked_embedding / norm.expand_as(masked_embedding)
         return masked_embedding, self.mask.norm(1), embedded_x.norm(2), masked_embedding.norm(2)

@@ -32,11 +32,11 @@ class CS_Tripletnet(nn.Module):
         general_y = self.embeddingnet.embeddingnet(y)
         general_z = self.embeddingnet.embeddingnet(z)
         # l2-normalize embeddings
-        norm = torch.norm(general_x, p=2, dim=1) + 1e-10
+        norm = torch.norm(general_x, p=2, dim=1, keepdim=True) + 1e-10
         general_x = general_x / norm.expand_as(general_x)
-        norm = torch.norm(general_y, p=2, dim=1) + 1e-10
+        norm = torch.norm(general_y, p=2, dim=1, keepdim=True) + 1e-10
         general_y = general_y / norm.expand_as(general_y)
-        norm = torch.norm(general_z, p=2, dim=1) + 1e-10
+        norm = torch.norm(general_z, p=2, dim=1, keepdim=True) + 1e-10
         general_z = general_z / norm.expand_as(general_z)
 
         feat = torch.cat((general_x, general_y), 1)
