@@ -127,7 +127,7 @@ def main():
         embedding_size=args.dim_embed, learnedmask=args.learned, prein=args.prein)
     global mask_var
     mask_var = csn_model.masks.weight
-    tnet = CS_Tripletnet(csn_model, args.num_concepts)
+    tnet = CS_Tripletnet(csn_model, args.num_concepts, use_cuda=args.cuda)
     if args.cuda:
         tnet.cuda()
 

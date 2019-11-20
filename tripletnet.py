@@ -16,11 +16,12 @@ class ConceptBranch(nn.Module):
         return x
 
 class CS_Tripletnet(nn.Module):
-    def __init__(self, embeddingnet, num_concepts):
+    def __init__(self, embeddingnet, num_concepts, use_cuda: bool):
         super(CS_Tripletnet, self).__init__()
         self.embeddingnet = embeddingnet
         self.num_concepts = num_concepts
         self.concept_branch = ConceptBranch(self.num_concepts, 64*3)
+        self.use_cuda = use_cuda
 
     def forward(self, x, y, z, c):
         """ x: Anchor image,
@@ -50,7 +51,8 @@ class CS_Tripletnet(nn.Module):
             concept_idx = np.zeros((len(x),), dtype=int)
             concept_idx += idx
             concept_idx = torch.from_numpy(concept_idx)
-            concept_idx = concept_idx.cuda()
+            if self.use_cuda:
+                concept_idx = concept_idx.cuda()
             concept_idx = Variable(concept_idx)
 
             tmp_embedded_x, masknorm_norm_x, embed_norm_x, tot_embed_norm_x = self.embeddingnet(x, concept_idx)
