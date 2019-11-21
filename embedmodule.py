@@ -135,9 +135,17 @@ class TripletEmbedModule(LightningModule):
             x, y, z, c = batch
 
             if self.hparams.use_gpu:
-                x, y, z = x.cuda(), y.cuda(), z.cuda()
+                x_cuda, y_cuda, z_cuda = x.cuda(), y.cuda(), z.cuda()
+            else:
+                x_cuda, y_cuda, z_cuda = x, y, z
 
-            _, output_embeddings = self.forward(x, y, z)
+            _, output_embeddings = self.forward(x_cuda, y_cuda, z_cuda)
+            output_embeddings = (
+                output_embeddings[0].to('cpu'),
+                output_embeddings[1].to('cpu'),
+                output_embeddings[2].to('cpu')
+            )
+
             imgs = torch.cat([x, y, z], dim=0)
             imgs = torch.stack([self.denormalize(t) for t in imgs])
             output_embeddings = torch.cat(output_embeddings, dim=0)
