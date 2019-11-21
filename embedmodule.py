@@ -2,6 +2,7 @@ import math
 from typing import Tuple
 
 import torch
+from pytorch_lightning.logging import TestTubeLogger
 from torch import Tensor
 from pytorch_lightning import LightningModule, data_loader
 from test_tube import HyperOptArgumentParser
@@ -37,6 +38,15 @@ class TripletEmbedModule(LightningModule):
 
         self.criterion = torch.nn.MarginRankingLoss(margin=hparams.margin)
 
+        self.training_started = False
+
+        Normalize(mean=[0.485, 0.456, 0.406], std=[0.229, 0.224, 0.225])
+        mean = torch.tensor([0.485, 0.456, 0.406])
+        std = torch.tensor([0.229, 0.224, 0.225])
+
+        self.normalize = Normalize(mean.tolist(), std.tolist())
+        self.denormalize = Normalize((-mean / std).tolist(), (1.0 / std).tolist())
+
     def configure_optimizers(self):
         parameters = filter(lambda p: p.requires_grad, self.tripletnet.parameters())
         optimizer = Adam(parameters, self.hparams.learning_rate)
@@ -44,11 +54,12 @@ class TripletEmbedModule(LightningModule):
 
         return [optimizer], [scheduler]
 
-    def forward(self, x: Tensor, y: Tensor, z: Tensor) -> Tuple[Tensor, Tensor, Tensor, Tensor]:
+    def forward(self, x: Tensor, y: Tensor, z: Tensor) -> \
+            Tuple[Tuple[Tensor, Tensor, Tensor, Tensor], Tuple[Tensor, Tensor, Tensor]]:
         # x = anchor image, y = far image, z = close image
-        dist_a, dist_b, mask_norm, embed_norm, mask_embed_norm = self.tripletnet(x, y, z, 0)
+        dist_a, dist_b, mask_norm, embed_norm, mask_embed_norm, embeddings = self.tripletnet(x, y, z, 0)
 
-        return dist_a, dist_b, mask_norm, embed_norm
+        return (dist_a, dist_b, mask_norm, embed_norm), embeddings
 
     def loss(self, dist_a: Tensor, dist_b: Tensor, mask_norm: Tensor, embed_norm: Tensor):
         target = torch.full(dist_a.shape, fill_value=1, requires_grad=True)
@@ -62,9 +73,11 @@ class TripletEmbedModule(LightningModule):
         return loss_triplet + (self.hparams.embed_loss * loss_embed) + (self.hparams.mask_loss * loss_mask)
 
     def training_step(self, batch, batch_idx):
+        self.training_started = True
+
         x, y, z, c = batch
 
-        output = self.forward(x, y, z)
+        output, embeddings = self.forward(x, y, z)
         loss_value = self.loss(*output)
 
         log_dict = {
@@ -80,7 +93,7 @@ class TripletEmbedModule(LightningModule):
     def validation_step(self, batch, batch_idx):
         x, y, z, c = batch
 
-        output = self.forward(x, y, z)
+        output, embeddings = self.forward(x, y, z)
         loss_value = self.loss(*output)
 
         dist_a, dist_b = output[0], output[1]
@@ -88,12 +101,34 @@ class TripletEmbedModule(LightningModule):
         # to the anchor than the "close" image
         accuracy = torch.sum(dist_a > dist_b).item() / self.batch_size
 
+        img_tensors = torch.cat([x, y, z], dim=0)
+        img_tensors = torch.stack([self.denormalize(t) for t in img_tensors])
+        embedding_concat = torch.cat(embeddings, dim=0)
+        labels = ['x'] * self.batch_size + ['y'] * self.batch_size + ['z'] * self.batch_size
+
+        embed_data = (img_tensors, embedding_concat, labels)
+
         return {
             'val_loss': loss_value,
-            'val_accuracy': accuracy
+            'val_accuracy': accuracy,
+            'embed_data': embed_data
         }
 
     def validation_end(self, outputs):
+        img_tensors = torch.cat([d['embed_data'][0] for d in outputs], dim=0)
+        embeddings = torch.cat([d['embed_data'][1] for d in outputs], dim=0)
+        labels = sum([d['embed_data'][2] for d in outputs], [])
+
+        if self.training_started:
+            self.logger: TestTubeLogger
+            self.logger.experiment.add_embedding(
+                mat=embeddings,
+                metadata=labels,
+                label_img=img_tensors,
+                global_step=self.global_step,
+                tag='Val Embeddings'
+            )
+
         def find_avg(key: str) -> float:
             return sum(o[key] for o in outputs) / len(outputs)
 
@@ -116,7 +151,7 @@ class TripletEmbedModule(LightningModule):
             Resize(112),
             CenterCrop(112),
             ToTensor(),
-            Normalize(mean=[0.485, 0.456, 0.406], std=[0.229, 0.224, 0.225])
+            self.normalize
         ]
 
         if augment:

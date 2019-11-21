@@ -80,4 +80,4 @@ class CS_Tripletnet(nn.Module):
         mask_embed_norm = (tot_embed_norm_x + tot_embed_norm_y + tot_embed_norm_z) / 3
         dist_a = F.pairwise_distance(embedded_x, embedded_y, 2)
         dist_b = F.pairwise_distance(embedded_x, embedded_z, 2)
-        return dist_a, dist_b, mask_norm, embed_norm, mask_embed_norm
+        return dist_a, dist_b, mask_norm, embed_norm, mask_embed_norm, (embedded_x, embedded_y, embedded_z)
