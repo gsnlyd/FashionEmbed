@@ -134,6 +134,9 @@ class TripletEmbedModule(LightningModule):
                 break
             x, y, z, c = batch
 
+            if self.hparams.use_gpu:
+                x, y, z = x.cuda(), y.cuda(), z.cuda()
+
             _, output_embeddings = self.forward(x, y, z)
             imgs = torch.cat([x, y, z], dim=0)
             imgs = torch.stack([self.denormalize(t) for t in imgs])
