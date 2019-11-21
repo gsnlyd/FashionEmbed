@@ -129,31 +129,33 @@ class TripletEmbedModule(LightningModule):
         embeddings = torch.tensor([])
         labels = []
 
-        for batch_idx, batch in enumerate(self.val_dataloader()[0]):
-            if batch_idx * self.batch_size > self.hparams.num_embed_triplets:
-                break
-            x, y, z, c = batch
+        self.eval()
+        with torch.no_grad():
+            for batch_idx, batch in enumerate(self.val_dataloader()[0]):
+                if batch_idx * self.batch_size > self.hparams.num_embed_triplets:
+                    break
+                x, y, z, c = batch
 
-            if self.hparams.use_gpu:
-                x_cuda, y_cuda, z_cuda = x.cuda(), y.cuda(), z.cuda()
-            else:
-                x_cuda, y_cuda, z_cuda = x, y, z
+                if self.hparams.use_gpu:
+                    x_cuda, y_cuda, z_cuda = x.cuda(), y.cuda(), z.cuda()
+                else:
+                    x_cuda, y_cuda, z_cuda = x, y, z
 
-            _, output_embeddings = self.forward(x_cuda, y_cuda, z_cuda)
-            output_embeddings = (
-                output_embeddings[0].to('cpu'),
-                output_embeddings[1].to('cpu'),
-                output_embeddings[2].to('cpu')
-            )
+                _, output_embeddings = self.forward(x_cuda, y_cuda, z_cuda)
+                output_embeddings = (
+                    output_embeddings[0].to('cpu'),
+                    output_embeddings[1].to('cpu'),
+                    output_embeddings[2].to('cpu')
+                )
 
-            imgs = torch.cat([x, y, z], dim=0)
-            imgs = torch.stack([self.denormalize(t) for t in imgs])
-            output_embeddings = torch.cat(output_embeddings, dim=0)
+                imgs = torch.cat([x, y, z], dim=0)
+                imgs = torch.stack([self.denormalize(t) for t in imgs])
+                output_embeddings = torch.cat(output_embeddings, dim=0)
 
-            img_tensors = torch.cat([img_tensors, imgs], dim=0)
-            embeddings = torch.cat([embeddings, output_embeddings], dim=0)
+                img_tensors = torch.cat([img_tensors, imgs], dim=0)
+                embeddings = torch.cat([embeddings, output_embeddings], dim=0)
 
-            labels += (['x'] * self.batch_size + ['y'] * self.batch_size + ['z'] * self.batch_size)
+                labels += (['x'] * self.batch_size + ['y'] * self.batch_size + ['z'] * self.batch_size)
 
         self.logger: TestTubeLogger
         self.logger.experiment.add_embedding(
