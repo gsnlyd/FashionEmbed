@@ -1,5 +1,7 @@
 # Project
 data/
+lightning_logs/
+runs/
 
 # Python
 venv/

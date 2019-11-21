@@ -113,7 +113,7 @@ def main():
     print('Loading Val Dataset')
     val_loader = torch.utils.data.DataLoader(
         TripletImageLoader('data', 'ut-zap50k-images', 'filenames.json', 
-            conditions, 'val', n_triplets=80000,
+            conditions, 'val', n_triplets=20,
                         transform=transforms.Compose([
                             transforms.Resize(112),
                             transforms.CenterCrop(112),
@@ -260,7 +260,7 @@ def test(test_loader, tnet, criterion, epoch):
         if args.cuda:
             target = target.cuda()
         target = Variable(target)
-        test_loss =  criterion(dista, distb, target).data[0]
+        test_loss =  criterion(dista, distb, target).item()
 
         # measure accuracy and record loss
         acc = accuracy(dista, distb)

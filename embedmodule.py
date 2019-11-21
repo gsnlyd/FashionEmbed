@@ -1,4 +1,8 @@
+import math
+from typing import Tuple
+
 import torch
+from torch import Tensor
 from pytorch_lightning import LightningModule, data_loader
 from test_tube import HyperOptArgumentParser
 from torch.optim import Adam
@@ -13,7 +17,7 @@ from tripletnet import CS_Tripletnet
 
 
 class TripletEmbedModule(LightningModule):
-    def __init__(self, hparams: HyperOptArgumentParser):
+    def __init__(self, hparams):
         super(TripletEmbedModule, self).__init__()
 
         self.hparams = hparams
@@ -23,8 +27,8 @@ class TripletEmbedModule(LightningModule):
         csn_model = ConditionalSimNet(embed_model,
                                       n_conditions=hparams.num_masks,
                                       embedding_size=hparams.embedding_size,
-                                      learnedmask=hparams.learned_mask,
-                                      prein=hparams.disjoint_mask)
+                                      learnedmask=hparams.learned_masks,
+                                      prein=hparams.disjoint_masks)
         self.tripletnet: CS_Tripletnet = CS_Tripletnet(csn_model,
                                                        num_concepts=hparams.num_masks,
                                                        use_cuda=self.on_gpu)
@@ -40,20 +44,44 @@ class TripletEmbedModule(LightningModule):
 
         return [optimizer], [scheduler]
 
-    def forward(self, x: torch.Tensor, y: torch.Tensor, z: torch.Tensor):
-        pass
+    def forward(self, x: Tensor, y: Tensor, z: Tensor) -> Tuple[Tensor, Tensor, Tensor, Tensor]:
+        # x = anchor image, y = far image, z = close image
+        dist_a, dist_b, mask_norm, embed_norm, mask_embed_norm = self.tripletnet(x, y, z, 0)
 
-    def loss(self):
-        pass
+        return dist_a, dist_b, mask_norm, embed_norm
+
+    def loss(self, dist_a: Tensor, dist_b: Tensor, mask_norm: Tensor, embed_norm: Tensor):
+        target = torch.full(dist_a.shape, fill_value=1, requires_grad=True)
+        if self.on_gpu:
+            target = target.cuda()
+
+        loss_triplet = self.criterion(dist_a, dist_b, target)
+        loss_mask = mask_norm / self.batch_size
+        loss_embed = embed_norm / math.sqrt(self.batch_size)
+
+        return loss_triplet + (self.hparams.embed_loss * loss_embed) + (self.hparams.mask_loss * loss_mask)
 
     def training_step(self, batch, batch_idx):
-        pass
+        x, y, z, c = batch
+
+        output = self.forward(x, y, z)
+        loss_val = self.loss(*output)
+
+        log_dict = {
+            'train_loss': loss_val
+        }
+
+        return {
+            'loss': loss_val,
+            'progress_bar': log_dict,
+            'log': log_dict
+        }
 
     def validation_step(self, batch, batch_idx):
-        pass
+        return 0
 
     def validation_end(self, outputs):
-        pass
+        return {}
 
     def __make_dataloader(self, split: str, augment: bool, num_triplets: int):
         transforms = [
@@ -116,14 +144,16 @@ class TripletEmbedModule(LightningModule):
 
         parser.add_argument('--num-masks', '--nmasks', type=int, default=4)
         parser.add_argument('--embedding-size', '--esize', type=int, default=64)
+        parser.add_argument('--learned_masks', '-lm', action='store_true')
+        parser.add_argument('--disjoint_masks', '-dm', action='store_true')
 
-        parser.add_argument('--margin', '-m', type=int, default=15,
+        parser.add_argument('--margin', '-m', type=float, default=0.2,
                             help='Triplet loss margin')
         parser.add_argument('--embed-loss', type=float, default=5e-3,
                             help='Loss multiplier for the embed norm')
         parser.add_argument('--mask-loss', type=float, default=5e-4,
                             help='Loss multiplier for the mask norm')
 
-        parser.add_argument('--num_train_triplets', '--ntrain', default=100000)
-        parser.add_argument('--num_val_triplets', '--nval', default=50000)
-        parser.add_argument('--num_test_triplets', '--ntest', default=100000)
+        parser.add_argument('--num_train_triplets', '--ntrain', type=int, default=100000)
+        parser.add_argument('--num_val_triplets', '--nval', type=int, default=50000)
+        parser.add_argument('--num_test_triplets', '--ntest', type=int, default=100000)
