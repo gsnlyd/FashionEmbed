@@ -65,23 +65,51 @@ class TripletEmbedModule(LightningModule):
         x, y, z, c = batch
 
         output = self.forward(x, y, z)
-        loss_val = self.loss(*output)
+        loss_value = self.loss(*output)
 
         log_dict = {
-            'train_loss': loss_val
+            'train_loss': loss_value
         }
 
         return {
-            'loss': loss_val,
+            'loss': loss_value,
             'progress_bar': log_dict,
             'log': log_dict
         }
 
     def validation_step(self, batch, batch_idx):
-        return 0
+        x, y, z, c = batch
+
+        output = self.forward(x, y, z)
+        loss_value = self.loss(*output)
+
+        dist_a, dist_b = output[0], output[1]
+        # Accuracy is the fraction of triplets where the "far" image is closer
+        # to the anchor than the "close" image
+        accuracy = torch.sum(dist_a > dist_b).item() / self.batch_size
+
+        return {
+            'val_loss': loss_value,
+            'val_accuracy': accuracy
+        }
 
     def validation_end(self, outputs):
-        return {}
+        def find_avg(key: str) -> float:
+            return sum(o[key] for o in outputs) / len(outputs)
+
+        avg_val_loss = find_avg('val_loss')
+        avg_val_accuracy = find_avg('val_accuracy')
+
+        log_dict = {
+            'avg_val_loss': avg_val_loss,
+            'avg_val_accuracy': avg_val_accuracy
+        }
+
+        return {
+            'val_loss': avg_val_loss,
+            'progress_bar': log_dict,
+            'log': log_dict
+        }
 
     def __make_dataloader(self, split: str, augment: bool, num_triplets: int):
         transforms = [

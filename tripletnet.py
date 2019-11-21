@@ -8,7 +8,7 @@ class ConceptBranch(nn.Module):
     def __init__(self, out_dim, embedding_dim):
         super(ConceptBranch, self).__init__()
         self.fc1 = nn.Sequential(nn.Linear(embedding_dim, 32), nn.ReLU(inplace=True))
-        self.fc2 = nn.Sequential(nn.Linear(32, out_dim), nn.Softmax())
+        self.fc2 = nn.Sequential(nn.Linear(32, out_dim), nn.Softmax(dim=1))
                                  
     def forward(self, x):
         x = self.fc1(x)
