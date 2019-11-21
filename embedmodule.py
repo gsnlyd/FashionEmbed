@@ -110,4 +110,20 @@ class TripletEmbedModule(LightningModule):
 
     @staticmethod
     def configure_parser(parser: HyperOptArgumentParser):
-        pass
+        parser.add_argument('--batch-size', '-b', type=int, default=96)
+        parser.add_argument('--epochs', '-e', type=int, default=15)
+        parser.add_argument('--learning-rate', '-lr', type=float, default=5e-5)
+
+        parser.add_argument('--num-masks', '--nmasks', type=int, default=4)
+        parser.add_argument('--embedding-size', '--esize', type=int, default=64)
+
+        parser.add_argument('--margin', '-m', type=int, default=15,
+                            help='Triplet loss margin')
+        parser.add_argument('--embed-loss', type=float, default=5e-3,
+                            help='Loss multiplier for the embed norm')
+        parser.add_argument('--mask-loss', type=float, default=5e-4,
+                            help='Loss multiplier for the mask norm')
+
+        parser.add_argument('--num_train_triplets', '--ntrain', default=100000)
+        parser.add_argument('--num_val_triplets', '--nval', default=50000)
+        parser.add_argument('--num_test_triplets', '--ntest', default=100000)
