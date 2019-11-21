@@ -101,34 +101,12 @@ class TripletEmbedModule(LightningModule):
         # to the anchor than the "close" image
         accuracy = torch.sum(dist_a > dist_b).item() / self.batch_size
 
-        img_tensors = torch.cat([x, y, z], dim=0)
-        img_tensors = torch.stack([self.denormalize(t) for t in img_tensors])
-        embedding_concat = torch.cat(embeddings, dim=0)
-        labels = ['x'] * self.batch_size + ['y'] * self.batch_size + ['z'] * self.batch_size
-
-        embed_data = (img_tensors, embedding_concat, labels)
-
         return {
             'val_loss': loss_value,
-            'val_accuracy': accuracy,
-            'embed_data': embed_data
+            'val_accuracy': accuracy
         }
 
     def validation_end(self, outputs):
-        img_tensors = torch.cat([d['embed_data'][0] for d in outputs], dim=0)
-        embeddings = torch.cat([d['embed_data'][1] for d in outputs], dim=0)
-        labels = sum([d['embed_data'][2] for d in outputs], [])
-
-        if self.training_started:
-            self.logger: TestTubeLogger
-            self.logger.experiment.add_embedding(
-                mat=embeddings,
-                metadata=labels,
-                label_img=img_tensors,
-                global_step=self.global_step,
-                tag='Val Embeddings'
-            )
-
         def find_avg(key: str) -> float:
             return sum(o[key] for o in outputs) / len(outputs)
 
@@ -145,6 +123,35 @@ class TripletEmbedModule(LightningModule):
             'progress_bar': log_dict,
             'log': log_dict
         }
+
+    def on_epoch_end(self):
+        img_tensors = torch.tensor([])
+        embeddings = torch.tensor([])
+        labels = []
+
+        for batch_idx, batch in enumerate(self.val_dataloader()[0]):
+            if batch_idx * self.batch_size > self.hparams.num_embed_triplets:
+                break
+            x, y, z, c = batch
+
+            _, output_embeddings = self.forward(x, y, z)
+            imgs = torch.cat([x, y, z], dim=0)
+            imgs = torch.stack([self.denormalize(t) for t in imgs])
+            output_embeddings = torch.cat(output_embeddings, dim=0)
+
+            img_tensors = torch.cat([img_tensors, imgs], dim=0)
+            embeddings = torch.cat([embeddings, output_embeddings], dim=0)
+
+            labels += (['x'] * self.batch_size + ['y'] * self.batch_size + ['z'] * self.batch_size)
+
+        self.logger: TestTubeLogger
+        self.logger.experiment.add_embedding(
+            mat=embeddings,
+            metadata=labels,
+            label_img=img_tensors,
+            global_step=self.global_step,
+            tag='Embeddings'
+        )
 
     def __make_dataloader(self, split: str, augment: bool, num_triplets: int):
         transforms = [
@@ -220,3 +227,5 @@ class TripletEmbedModule(LightningModule):
         parser.add_argument('--num_train_triplets', '--ntrain', type=int, default=100000)
         parser.add_argument('--num_val_triplets', '--nval', type=int, default=50000)
         parser.add_argument('--num_test_triplets', '--ntest', type=int, default=100000)
+        parser.add_argument('--num_embed_triplets', '--nembed', type=int, default=100,
+                            help='Number of triplets to add to the Embedding Projector after each epoch')
