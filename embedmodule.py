@@ -32,8 +32,8 @@ class TripletEmbedModule(LightningModule):
                                       prein=hparams.disjoint_masks)
         self.tripletnet: CS_Tripletnet = CS_Tripletnet(csn_model,
                                                        num_concepts=hparams.num_masks,
-                                                       use_cuda=self.on_gpu)
-        if self.on_gpu:
+                                                       use_cuda=hparams.use_gpu)
+        if hparams.use_gpu:
             self.tripletnet.cuda()
 
         self.criterion = torch.nn.MarginRankingLoss(margin=hparams.margin)
@@ -63,7 +63,7 @@ class TripletEmbedModule(LightningModule):
 
     def loss(self, dist_a: Tensor, dist_b: Tensor, mask_norm: Tensor, embed_norm: Tensor):
         target = torch.full(dist_a.shape, fill_value=1, requires_grad=True)
-        if self.on_gpu:
+        if self.hparams.use_gpu:
             target = target.cuda()
 
         loss_triplet = self.criterion(dist_a, dist_b, target)
@@ -211,6 +211,7 @@ class TripletEmbedModule(LightningModule):
         parser.add_argument('--batch-size', '-b', type=int, default=96)
         parser.add_argument('--epochs', '-e', type=int, default=15)
         parser.add_argument('--learning-rate', '-lr', type=float, default=5e-5)
+        parser.add_argument('--use-gpu', '--gpu', action='store_true')
 
         parser.add_argument('--num-masks', '--nmasks', type=int, default=4)
         parser.add_argument('--embedding-size', '--esize', type=int, default=64)
