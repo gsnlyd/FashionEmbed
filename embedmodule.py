@@ -225,6 +225,8 @@ class TripletEmbedModule(LightningModule):
         parser.add_argument('--epochs', '-e', type=int, default=15)
         parser.add_argument('--learning-rate', '-lr', type=float, default=5e-5)
         parser.add_argument('--use-gpu', '--gpu', action='store_true')
+        parser.add_argument('--resume', '-r', type=int, default=-1,
+                            help='Resume training from a previous version.')
 
         parser.add_argument('--num-masks', '--nmasks', type=int, default=4)
         parser.add_argument('--embedding-size', '--esize', type=int, default=64)
