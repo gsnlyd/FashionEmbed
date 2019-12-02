@@ -47,6 +47,9 @@ class CS_Tripletnet(nn.Module):
         embedded_y = None
         embedded_z = None
         mask_norm = None
+
+        masked_embeddings = ([], [], [])
+
         for idx in range(self.num_concepts):
             concept_idx = np.zeros((len(x),), dtype=int)
             concept_idx += idx
@@ -58,7 +61,10 @@ class CS_Tripletnet(nn.Module):
             tmp_embedded_x, masknorm_norm_x, embed_norm_x, tot_embed_norm_x = self.embeddingnet(x, concept_idx)
             tmp_embedded_y, masknorm_norm_y, embed_norm_y, tot_embed_norm_y = self.embeddingnet(y, concept_idx)
             tmp_embedded_z, masknorm_norm_z, embed_norm_z, tot_embed_norm_z = self.embeddingnet(z, concept_idx)
- 
+
+            for l, e in zip(masked_embeddings, (tmp_embedded_x, tmp_embedded_y, tmp_embedded_z)):
+                l.append(e)
+
             if mask_norm is None:
                 mask_norm = masknorm_norm_x
             else:
@@ -80,4 +86,5 @@ class CS_Tripletnet(nn.Module):
         mask_embed_norm = (tot_embed_norm_x + tot_embed_norm_y + tot_embed_norm_z) / 3
         dist_a = F.pairwise_distance(embedded_x, embedded_y, 2)
         dist_b = F.pairwise_distance(embedded_x, embedded_z, 2)
-        return dist_a, dist_b, mask_norm, embed_norm, mask_embed_norm, (embedded_x, embedded_y, embedded_z)
+        return dist_a, dist_b, mask_norm, embed_norm, mask_embed_norm,\
+            (embedded_x, embedded_y, embedded_z), masked_embeddings

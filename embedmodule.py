@@ -1,5 +1,5 @@
 import math
-from typing import Tuple
+from typing import Tuple, List
 
 import torch
 from pytorch_lightning.logging import TestTubeLogger
@@ -54,12 +54,15 @@ class TripletEmbedModule(LightningModule):
 
         return [optimizer], [scheduler]
 
-    def forward(self, x: Tensor, y: Tensor, z: Tensor) -> \
-            Tuple[Tuple[Tensor, Tensor, Tensor, Tensor], Tuple[Tensor, Tensor, Tensor]]:
-        # x = anchor image, y = far image, z = close image
-        dist_a, dist_b, mask_norm, embed_norm, mask_embed_norm, embeddings = self.tripletnet(x, y, z, 0)
+    DistsAndNorm = Tuple[Tensor, Tensor, Tensor, Tensor]
+    WeightedEmbeds = Tuple[Tensor, Tensor, Tensor]
+    MaskedEmbeds = Tuple[List[Tensor], List[Tensor], List[Tensor]]
 
-        return (dist_a, dist_b, mask_norm, embed_norm), embeddings
+    def forward(self, x: Tensor, y: Tensor, z: Tensor) -> Tuple[DistsAndNorm, WeightedEmbeds, MaskedEmbeds]:
+        # x = anchor image, y = far image, z = close image
+        dist_a, dist_b, mask_norm, embed_norm, mask_embed_norm, embeddings, masked_embeddings = self.tripletnet(x, y, z, 0)
+
+        return (dist_a, dist_b, mask_norm, embed_norm), embeddings, masked_embeddings
 
     def loss(self, dist_a: Tensor, dist_b: Tensor, mask_norm: Tensor, embed_norm: Tensor):
         target = torch.full(dist_a.shape, fill_value=1, requires_grad=True)
@@ -77,7 +80,7 @@ class TripletEmbedModule(LightningModule):
 
         x, y, z, c = batch
 
-        output, embeddings = self.forward(x, y, z)
+        output, embeddings, masked_embeddings = self.forward(x, y, z)
         loss_value = self.loss(*output)
 
         log_dict = {
@@ -93,7 +96,7 @@ class TripletEmbedModule(LightningModule):
     def validation_step(self, batch, batch_idx):
         x, y, z, c = batch
 
-        output, embeddings = self.forward(x, y, z)
+        output, embeddings, masked_embeddings = self.forward(x, y, z)
         loss_value = self.loss(*output)
 
         dist_a, dist_b = output[0], output[1]
@@ -127,6 +130,7 @@ class TripletEmbedModule(LightningModule):
     def on_epoch_end(self):
         img_tensors = torch.tensor([])
         embeddings = torch.tensor([])
+        masked_embeddings = [torch.tensor([]) for i in range(self.hparams.num_masks)]
         labels = []
 
         self.eval()
@@ -141,12 +145,10 @@ class TripletEmbedModule(LightningModule):
                 else:
                     x_cuda, y_cuda, z_cuda = x, y, z
 
-                _, output_embeddings = self.forward(x_cuda, y_cuda, z_cuda)
-                output_embeddings = (
-                    output_embeddings[0].to('cpu'),
-                    output_embeddings[1].to('cpu'),
-                    output_embeddings[2].to('cpu')
-                )
+                _, output_embeddings, output_masked_embeddings = self.forward(x_cuda, y_cuda, z_cuda)
+
+                output_embeddings = tuple(e.to('cpu') for e in output_embeddings)
+                output_masked_embeddings = tuple([e.to('cpu') for e in l] for l in output_masked_embeddings)
 
                 imgs = torch.cat([x, y, z], dim=0)
                 imgs = torch.stack([self.denormalize(t) for t in imgs])
@@ -155,16 +157,26 @@ class TripletEmbedModule(LightningModule):
                 img_tensors = torch.cat([img_tensors, imgs], dim=0)
                 embeddings = torch.cat([embeddings, output_embeddings], dim=0)
 
+                for mask_i, (x_e, y_e, z_e) in enumerate(zip(*output_masked_embeddings)):
+                    m_embeddings = torch.cat([x_e, y_e, z_e], dim=0)
+                    masked_embeddings[mask_i] = torch.cat([masked_embeddings[mask_i], m_embeddings], dim=0)
+
                 labels += (['x'] * self.batch_size + ['y'] * self.batch_size + ['z'] * self.batch_size)
 
         self.logger: TestTubeLogger
-        self.logger.experiment.add_embedding(
-            mat=embeddings,
-            metadata=labels,
-            label_img=img_tensors,
-            global_step=self.global_step,
-            tag='Embeddings'
-        )
+        for mask_i, em in enumerate([embeddings] + masked_embeddings):
+            if mask_i == 0:
+                tag = 'Weighted Embeddings'
+            else:
+                tag = 'Mask {} Embeddings'.format(mask_i)
+
+            self.logger.experiment.add_embedding(
+                mat=em,
+                metadata=labels,
+                label_img=img_tensors,
+                global_step=self.global_step,
+                tag=tag
+            )
 
     def __make_dataloader(self, split: str, augment: bool, num_triplets: int):
         transforms = [
