@@ -21,6 +21,8 @@ from tripletnet import CS_Tripletnet
 DEFAULT_IMAGES_DIR = 'images'
 DEFAULT_TRIPLETS_FILE_NAME = 'triplets.txt'
 
+PARAMETERS_DIR_NAME = 'parameters'
+
 
 class TripletEmbedModule(LightningModule):
     def __init__(self, hparams):
@@ -128,7 +130,7 @@ class TripletEmbedModule(LightningModule):
             'log': log_dict
         }
 
-    def on_epoch_end(self):
+    def __log_embeddings(self):
         img_tensors = torch.tensor([])
         embeddings = torch.tensor([])
         masked_embeddings = [torch.tensor([]) for i in range(self.hparams.num_masks)]
@@ -178,6 +180,26 @@ class TripletEmbedModule(LightningModule):
                 global_step=self.global_step,
                 tag=tag
             )
+
+    def __save_parameters(self):
+        self.logger: TestTubeLogger
+        exp = self.logger.experiment
+
+        exp_dir = exp.get_data_path(exp.name, exp.version)
+        parameters_dir = os.path.join(exp_dir, PARAMETERS_DIR_NAME)
+
+        if not os.path.exists(parameters_dir):
+            os.mkdir(parameters_dir)
+
+        save_name = 'version_{}_epoch_{}.pt'.format(exp.version, self.current_epoch)
+
+        self.tripletnet: CS_Tripletnet
+        torch.save(self.tripletnet.state_dict(),
+                   os.path.join(parameters_dir, save_name))
+
+    def on_epoch_end(self):
+        self.__log_embeddings()
+        self.__save_parameters()
 
     def __get_transforms(self, augment: bool):
         transforms = [
