@@ -2,7 +2,6 @@ import os
 
 import torch
 from pytorch_lightning import Trainer
-from pytorch_lightning.callbacks import ModelCheckpoint
 from pytorch_lightning.logging import TestTubeLogger
 from test_tube import HyperOptArgumentParser
 
@@ -23,7 +22,7 @@ if __name__ == '__main__':
     if hparams.resume > -1:
         logger = TestTubeLogger(
             save_dir=os.getcwd(),
-            name='lightning_logs',
+            name=DEFAULT_NAME,
             version=hparams.resume
         )
     else:

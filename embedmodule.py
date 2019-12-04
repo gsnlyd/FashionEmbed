@@ -1,4 +1,5 @@
 import math
+import os
 from typing import Tuple, List
 
 import torch
@@ -8,13 +9,17 @@ from pytorch_lightning import LightningModule, data_loader
 from test_tube import HyperOptArgumentParser
 from torch.optim import Adam
 from torch.optim.lr_scheduler import StepLR
-from torch.utils.data import DataLoader
+from torch.utils.data import DataLoader, Dataset
 from torchvision.transforms import Compose, Resize, CenterCrop, ToTensor, Normalize, RandomHorizontalFlip
 
 import Resnet_18
 from csn import ConditionalSimNet
 from triplet_image_loader import TripletImageLoader
+from tripletloader import TripletDataset
 from tripletnet import CS_Tripletnet
+
+DEFAULT_IMAGES_DIR = 'images'
+DEFAULT_TRIPLETS_FILE_NAME = 'triplets.txt'
 
 
 class TripletEmbedModule(LightningModule):
@@ -37,8 +42,6 @@ class TripletEmbedModule(LightningModule):
             self.tripletnet.cuda()
 
         self.criterion = torch.nn.MarginRankingLoss(margin=hparams.margin)
-
-        self.training_started = False
 
         Normalize(mean=[0.485, 0.456, 0.406], std=[0.229, 0.224, 0.225])
         mean = torch.tensor([0.485, 0.456, 0.406])
@@ -76,9 +79,7 @@ class TripletEmbedModule(LightningModule):
         return loss_triplet + (self.hparams.embed_loss * loss_embed) + (self.hparams.mask_loss * loss_mask)
 
     def training_step(self, batch, batch_idx):
-        self.training_started = True
-
-        x, y, z, c = batch
+        x, y, z, _ = batch
 
         output, embeddings, masked_embeddings = self.forward(x, y, z)
         loss_value = self.loss(*output)
@@ -94,7 +95,7 @@ class TripletEmbedModule(LightningModule):
         }
 
     def validation_step(self, batch, batch_idx):
-        x, y, z, c = batch
+        x, y, z, _ = batch
 
         output, embeddings, masked_embeddings = self.forward(x, y, z)
         loss_value = self.loss(*output)
@@ -138,7 +139,7 @@ class TripletEmbedModule(LightningModule):
             for batch_idx, batch in enumerate(self.val_dataloader()[0]):
                 if batch_idx * self.batch_size > self.hparams.num_embed_triplets:
                     break
-                x, y, z, c = batch
+                x, y, z, _ = batch
 
                 if self.hparams.use_gpu:
                     x_cuda, y_cuda, z_cuda = x.cuda(), y.cuda(), z.cuda()
@@ -178,7 +179,7 @@ class TripletEmbedModule(LightningModule):
                 tag=tag
             )
 
-    def __make_dataloader(self, split: str, augment: bool, num_triplets: int):
+    def __get_transforms(self, augment: bool):
         transforms = [
             Resize(112),
             CenterCrop(112),
@@ -188,6 +189,20 @@ class TripletEmbedModule(LightningModule):
 
         if augment:
             transforms.insert(2, RandomHorizontalFlip())
+
+        return transforms
+
+    def __make_dataloader_from_dataset(self, dataset: Dataset):
+        return DataLoader(
+            dataset,
+            batch_size=self.batch_size,
+            shuffle=True,
+            num_workers=8,
+            pin_memory=True
+        )
+
+    def __make_default_dataloader(self, split: str, augment: bool, num_triplets: int):
+        transforms = self.__get_transforms(augment)
 
         dataset = TripletImageLoader(
             root='data',
@@ -199,33 +214,40 @@ class TripletEmbedModule(LightningModule):
             transform=Compose(transforms)
         )
 
-        return DataLoader(
-            dataset,
-            batch_size=self.batch_size,
-            shuffle=True,
-            num_workers=8,
-            pin_memory=True
+        return self.__make_dataloader_from_dataset(dataset)
+
+    def __make_configurable_dataloader(self, augment: bool, use_range: Tuple[int, int]):
+        transforms = self.__get_transforms(augment)
+
+        dataset = TripletDataset(
+            images_dir=os.path.join(self.hparams.dataset, DEFAULT_IMAGES_DIR),
+            triplets_path=os.path.join(self.hparams.dataset, DEFAULT_TRIPLETS_FILE_NAME),
+            use_range=use_range,
+            transform=Compose(transforms)
         )
+
+        return self.__make_dataloader_from_dataset(dataset)
 
     @data_loader
     def train_dataloader(self):
-        return self.__make_dataloader(
+        if self.hparams.dataset is not None:
+            return self.__make_configurable_dataloader(augment=True, use_range=(0, self.hparams.num_train_triplets))
+
+        return self.__make_default_dataloader(
             split='train',
             augment=True,
             num_triplets=self.hparams.num_train_triplets
         )
 
     @data_loader
-    def test_dataloader(self):
-        return self.__make_dataloader(
-            split='test',
-            augment=False,
-            num_triplets=self.hparams.num_test_triplets
-        )
-
-    @data_loader
     def val_dataloader(self):
-        return self.__make_dataloader(
+        if self.hparams.dataset is not None:
+            start = self.hparams.num_train_triplets
+            end = start + self.hparams.num_val_triplets
+
+            return self.__make_configurable_dataloader(augment=True, use_range=(start, end))
+
+        return self.__make_default_dataloader(
             split='val',
             augment=False,
             num_triplets=self.hparams.num_val_triplets
@@ -239,6 +261,8 @@ class TripletEmbedModule(LightningModule):
         parser.add_argument('--use-gpu', '--gpu', action='store_true')
         parser.add_argument('--resume', '-r', type=int, default=-1,
                             help='Resume training from a previous version.')
+
+        parser.add_argument('--dataset', '-d', type=str, help='Path to optional custom dataset.')
 
         parser.add_argument('--num-masks', '--nmasks', type=int, default=4)
         parser.add_argument('--embedding-size', '--esize', type=int, default=64)
