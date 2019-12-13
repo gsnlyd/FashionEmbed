@@ -23,6 +23,9 @@ DEFAULT_TRIPLETS_FILE_NAME = 'triplets.txt'
 
 PARAMETERS_DIR_NAME = 'parameters'
 
+NORM_MEAN = torch.tensor([0.485, 0.456, 0.406])
+NORM_STD = torch.tensor([0.229, 0.224, 0.225])
+
 
 class TripletEmbedModule(LightningModule):
     def __init__(self, hparams):
@@ -31,26 +34,35 @@ class TripletEmbedModule(LightningModule):
         self.hparams = hparams
         self.batch_size = hparams.batch_size
 
-        embed_model = Resnet_18.resnet18(pretrained=True, embedding_size=hparams.embedding_size)
-        csn_model = ConditionalSimNet(embed_model,
-                                      n_conditions=hparams.num_masks,
-                                      embedding_size=hparams.embedding_size,
-                                      learnedmask=hparams.learned_masks,
-                                      prein=hparams.disjoint_masks)
-        self.tripletnet: CS_Tripletnet = CS_Tripletnet(csn_model,
-                                                       num_concepts=hparams.num_masks,
-                                                       use_cuda=hparams.use_gpu)
-        if hparams.use_gpu:
-            self.tripletnet.cuda()
+        self.tripletnet = self.create_model(
+            num_masks=hparams.num_masks,
+            embedding_size=hparams.embedding_size,
+            learned_masks=hparams.learned_masks,
+            disjoint_masks=hparams.disjoint_masks,
+            use_gpu=hparams.use_gpu
+        )
 
         self.criterion = torch.nn.MarginRankingLoss(margin=hparams.margin)
 
-        Normalize(mean=[0.485, 0.456, 0.406], std=[0.229, 0.224, 0.225])
-        mean = torch.tensor([0.485, 0.456, 0.406])
-        std = torch.tensor([0.229, 0.224, 0.225])
+        self.normalize = Normalize(NORM_MEAN.tolist(), NORM_STD.tolist())
+        self.denormalize = Normalize((-NORM_MEAN / NORM_STD).tolist(), (1.0 / NORM_STD).tolist())
 
-        self.normalize = Normalize(mean.tolist(), std.tolist())
-        self.denormalize = Normalize((-mean / std).tolist(), (1.0 / std).tolist())
+    @staticmethod
+    def create_model(num_masks: int, embedding_size: int, learned_masks: bool,
+                     disjoint_masks: bool, use_gpu: bool) -> CS_Tripletnet:
+        embed_model = Resnet_18.resnet18(pretrained=True, embedding_size=embedding_size)
+        csn_model = ConditionalSimNet(embed_model,
+                                      n_conditions=num_masks,
+                                      embedding_size=embedding_size,
+                                      learnedmask=learned_masks,
+                                      prein=disjoint_masks)
+        tripletnet: CS_Tripletnet = CS_Tripletnet(csn_model,
+                                                  num_concepts=num_masks,
+                                                  use_cuda=use_gpu)
+        if use_gpu:
+            tripletnet.cuda()
+
+        return tripletnet
 
     def configure_optimizers(self):
         parameters = filter(lambda p: p.requires_grad, self.tripletnet.parameters())
@@ -65,7 +77,8 @@ class TripletEmbedModule(LightningModule):
 
     def forward(self, x: Tensor, y: Tensor, z: Tensor) -> Tuple[DistsAndNorm, WeightedEmbeds, MaskedEmbeds]:
         # x = anchor image, y = far image, z = close image
-        dist_a, dist_b, mask_norm, embed_norm, mask_embed_norm, embeddings, masked_embeddings = self.tripletnet(x, y, z, 0)
+        dist_a, dist_b, mask_norm, embed_norm, mask_embed_norm, embeddings, masked_embeddings = self.tripletnet(
+            x, y, z, 0)
 
         return (dist_a, dist_b, mask_norm, embed_norm), embeddings, masked_embeddings
 
