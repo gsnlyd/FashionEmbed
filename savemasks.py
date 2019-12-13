@@ -92,6 +92,8 @@ def save_masks(parameters_path: str, images_dir: str, save_dir: str,
     with torch.no_grad():
         for batch_i, data in enumerate(loader):
             n, p, img_t = data
+            if use_gpu:
+                img_t = img_t.cuda()
 
             full_em = model.embeddingnet.embeddingnet(img_t).to('cpu')
             save_embeddings(full_embeddings_path, n, full_em)
