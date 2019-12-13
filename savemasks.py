@@ -100,6 +100,8 @@ def save_masks(parameters_path: str, images_dir: str, save_dir: str,
 
             for mask_i in range(num_masks):
                 mask_t = torch.full((img_t.shape[0],), fill_value=mask_i, dtype=torch.long)
+                if use_gpu:
+                    mask_t = mask_t.cuda()
                 m = model.embeddingnet(img_t, mask_t)[0].to('cpu')
                 save_embeddings(masked_embeddings_paths[mask_i], n, m)
 
