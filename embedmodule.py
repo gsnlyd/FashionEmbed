@@ -39,7 +39,8 @@ class TripletEmbedModule(LightningModule):
             embedding_size=hparams.embedding_size,
             learned_masks=hparams.learned_masks,
             disjoint_masks=hparams.disjoint_masks,
-            use_gpu=hparams.use_gpu
+            use_gpu=hparams.use_gpu,
+            pretrained=not hparams.disable_pretrained
         )
 
         self.criterion = torch.nn.MarginRankingLoss(margin=hparams.margin)
@@ -49,8 +50,9 @@ class TripletEmbedModule(LightningModule):
 
     @staticmethod
     def create_model(num_masks: int, embedding_size: int, learned_masks: bool,
-                     disjoint_masks: bool, use_gpu: bool) -> CS_Tripletnet:
-        embed_model = Resnet_18.resnet18(pretrained=True, embedding_size=embedding_size)
+                     disjoint_masks: bool, use_gpu: bool,
+                     pretrained: bool = True) -> CS_Tripletnet:
+        embed_model = Resnet_18.resnet18(pretrained=pretrained, embedding_size=embedding_size)
         csn_model = ConditionalSimNet(embed_model,
                                       n_conditions=num_masks,
                                       embedding_size=embedding_size,
@@ -303,6 +305,8 @@ class TripletEmbedModule(LightningModule):
         parser.add_argument('--embedding-size', '--esize', type=int, default=64)
         parser.add_argument('--learned_masks', '-lm', action='store_true')
         parser.add_argument('--disjoint_masks', '-dm', action='store_true')
+        parser.add_argument('--disable-pretrained', '-dp', action='store_true',
+                            help='Do not use a pre-trained ResNet.')
 
         parser.add_argument('--margin', '-m', type=float, default=0.2,
                             help='Triplet loss margin')
